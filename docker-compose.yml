@@ -1,0 +1,67 @@
+version: '3'
+
+services:
+  elasticsearch:
+    image: elasticsearch:5.4.0
+    container_name: elasticsearch
+    volumes:
+            - ./elasticsearch/data:/usr/share/elasticsearch/data
+    ports:
+            - "9200:9200"
+            - "9300:9300" 
+    networks:
+        - web
+  logstash:
+    image: logstash:5.4.0
+    container_name: logstash
+    environment:
+            TZ: Europe/Paris
+            LOGSPOUT: ignore
+    expose:
+            - 5000
+            - 5001
+            - 5002
+    ports:
+            - "12201:12201"
+            - "12201:12201/udp"
+            - "5000:5000/udp"
+            - "5001:5001"
+            - "5002:5002"
+    volumes:
+            - ./logstash/conf:/conf
+    links:
+            - elasticsearch:elasticsearch
+    command: logstash -f /conf/gelf.conf
+    networks:
+        - web 
+  kibana:
+    image: kibana:5.4.0
+    container_name: kibana
+    links:
+            - elasticsearch:elasticsearch
+    ports:
+            - "5601:5601"
+    volumes:
+            - ./kibana/etc/kibana.yml:/etc/kibana/kibana.yml
+    labels:
+        - traefik.port=5601
+        - traefik.frontend.rule=Host:kibana.services.alin.be
+        - traefik.backend=kibana
+        - traefik.frontend.entryPoints=http,https
+    networks:
+        - web
+  logspout:
+    build: logspout
+    container_name: logspout
+    links:
+            - elasticsearch:elasticsearch
+    volumes:
+            - /var/run/docker.sock:/tmp/docker.sock
+    command: logstash://morpheus.alin.be:5000 
+    networks:
+        - web
+
+networks:
+  web:
+    external:
+      name: traefik_webgateway
