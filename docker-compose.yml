@@ -1,67 +1,81 @@
-version: '3'
+version: '3.4'
 
 services:
   elasticsearch:
-    image: elasticsearch:5.4.0
-    container_name: elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:5.6.3
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1000M
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.port=9200
+        - traefik.frontend.rule=Host:elasticsearch.services.alin.be
+        - traefik.frontend.entryPoints=http,https
+        - traefik.backend.loadbalancer.method=wrr
+    environment:
+      - cluster.name=docker-cluster
+      - bootstrap.memory_lock=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     volumes:
-            - ./elasticsearch/data:/usr/share/elasticsearch/data
-    ports:
-            - "9200:9200"
-            - "9300:9300" 
-    networks:
-        - web
+      - ./elasticsearch/limits.conf:/etc/security/limits.conf
+      - ./elasticsearch/data:/usr/share/elasticsearch/data
+
   logstash:
-    image: logstash:5.4.0
-    container_name: logstash
+    image: docker.elastic.co/logstash/logstash:5.6.3
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: 50M
+      restart_policy:
+        condition: on-failure
     environment:
             TZ: Europe/Paris
             LOGSPOUT: ignore
-    expose:
-            - 5000
-            - 5001
-            - 5002
-    ports:
-            - "12201:12201"
-            - "12201:12201/udp"
-            - "5000:5000/udp"
-            - "5001:5001"
-            - "5002:5002"
     volumes:
             - ./logstash/conf:/conf
-    links:
-            - elasticsearch:elasticsearch
     command: logstash -f /conf/gelf.conf
-    networks:
-        - web 
+
   kibana:
-    image: kibana:5.4.0
-    container_name: kibana
-    links:
-            - elasticsearch:elasticsearch
-    ports:
-            - "5601:5601"
-    volumes:
-            - ./kibana/etc/kibana.yml:/etc/kibana/kibana.yml
-    labels:
+    image: docker.elastic.co/kibana/kibana:5.6.3
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.15"
+          memory: 150M
+      restart_policy:
+        condition: on-failure
+      labels:
         - traefik.port=5601
         - traefik.frontend.rule=Host:kibana.services.alin.be
-        - traefik.backend=kibana
         - traefik.frontend.entryPoints=http,https
-    networks:
-        - web
-  logspout:
-    build: logspout
-    container_name: logspout
-    links:
-            - elasticsearch:elasticsearch
+        - traefik.backend.loadbalancer.method=wrr
+    environment:
+        - ELASTICSEARCH_PASSWORD = changeme
     volumes:
-            - /var/run/docker.sock:/tmp/docker.sock
-    command: logstash://morpheus.alin.be:5000 
-    networks:
-        - web
+        - ./kibana/kibana.yml:/etc/kibana/kibana.yml
+
+#  logspout:
+#    build: logspout
+#    deploy:
+#      replicas: 1
+#      resources:
+#        limits:
+#          cpus: "0.1"
+#          memory: 50M
+#      restart_policy:
+#        condition: on-failure
+#    volumes:
+#            - /var/run/docker.sock:/tmp/docker.sock
+#    command: logstash://morpheus.alin.be:5000 
 
 networks:
-  web:
+  default:
     external:
-      name: traefik_webgateway
+      name: traefik-net
